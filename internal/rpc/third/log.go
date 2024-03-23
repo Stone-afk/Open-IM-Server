@@ -25,7 +25,6 @@ import (
 	"github.com/OpenIMSDK/tools/errs"
 	"github.com/OpenIMSDK/tools/utils"
 	utils2 "github.com/OpenIMSDK/tools/utils"
-
 	"github.com/openimsdk/open-im-server/v3/pkg/authverify"
 	relationtb "github.com/openimsdk/open-im-server/v3/pkg/common/db/table/relation"
 )
@@ -83,7 +82,7 @@ func (t *thirdServer) UploadLogs(ctx context.Context, req *third.UploadLogsReq) 
 }
 
 func (t *thirdServer) DeleteLogs(ctx context.Context, req *third.DeleteLogsReq) (*third.DeleteLogsResp, error) {
-	if err := authverify.CheckAdmin(ctx); err != nil {
+	if err := authverify.CheckAdmin(ctx, t.config); err != nil {
 		return nil, err
 	}
 	userID := ""
@@ -124,7 +123,7 @@ func dbToPbLogInfos(logs []*relationtb.LogModel) []*third.LogInfo {
 }
 
 func (t *thirdServer) SearchLogs(ctx context.Context, req *third.SearchLogsReq) (*third.SearchLogsResp, error) {
-	if err := authverify.CheckAdmin(ctx); err != nil {
+	if err := authverify.CheckAdmin(ctx, t.config); err != nil {
 		return nil, err
 	}
 	var (
@@ -134,6 +133,13 @@ func (t *thirdServer) SearchLogs(ctx context.Context, req *third.SearchLogsReq) 
 	if req.StartTime > req.EndTime {
 		return nil, errs.ErrArgs.Wrap("startTime>endTime")
 	}
+	if req.StartTime == 0 && req.EndTime == 0 {
+		t := time.Date(2019, time.January, 1, 0, 0, 0, 0, time.UTC)
+		timestampMills := t.UnixNano() / int64(time.Millisecond)
+		req.StartTime = timestampMills
+		req.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
+	}
+
 	total, logs, err := t.thirdDatabase.SearchLogs(ctx, req.Keyword, time.UnixMilli(req.StartTime), time.UnixMilli(req.EndTime), req.Pagination)
 	if err != nil {
 		return nil, err

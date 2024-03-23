@@ -17,34 +17,34 @@ package rpcclient
 import (
 	"context"
 
-	"google.golang.org/grpc"
-
 	"github.com/OpenIMSDK/protocol/friend"
 	sdkws "github.com/OpenIMSDK/protocol/sdkws"
 	"github.com/OpenIMSDK/tools/discoveryregistry"
-
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
+	util "github.com/openimsdk/open-im-server/v3/pkg/util/genutil"
+	"google.golang.org/grpc"
 )
 
 type Friend struct {
 	conn   grpc.ClientConnInterface
 	Client friend.FriendClient
 	discov discoveryregistry.SvcDiscoveryRegistry
+	Config *config.GlobalConfig
 }
 
-func NewFriend(discov discoveryregistry.SvcDiscoveryRegistry) *Friend {
-	conn, err := discov.GetConn(context.Background(), config.Config.RpcRegisterName.OpenImFriendName)
+func NewFriend(discov discoveryregistry.SvcDiscoveryRegistry, config *config.GlobalConfig) *Friend {
+	conn, err := discov.GetConn(context.Background(), config.RpcRegisterName.OpenImFriendName)
 	if err != nil {
-		panic(err)
+		util.ExitWithError(err)
 	}
 	client := friend.NewFriendClient(conn)
-	return &Friend{discov: discov, conn: conn, Client: client}
+	return &Friend{discov: discov, conn: conn, Client: client, Config: config}
 }
 
 type FriendRpcClient Friend
 
-func NewFriendRpcClient(discov discoveryregistry.SvcDiscoveryRegistry) FriendRpcClient {
-	return FriendRpcClient(*NewFriend(discov))
+func NewFriendRpcClient(discov discoveryregistry.SvcDiscoveryRegistry, config *config.GlobalConfig) FriendRpcClient {
+	return FriendRpcClient(*NewFriend(discov, config))
 }
 
 func (f *FriendRpcClient) GetFriendsInfo(
@@ -62,7 +62,7 @@ func (f *FriendRpcClient) GetFriendsInfo(
 	return
 }
 
-// possibleFriendUserID是否在userID的好友中.
+// possibleFriendUserID Is PossibleFriendUserId's friends.
 func (f *FriendRpcClient) IsFriend(ctx context.Context, possibleFriendUserID, userID string) (bool, error) {
 	resp, err := f.Client.IsFriend(ctx, &friend.IsFriendReq{UserID1: userID, UserID2: possibleFriendUserID})
 	if err != nil {
@@ -80,7 +80,7 @@ func (f *FriendRpcClient) GetFriendIDs(ctx context.Context, ownerUserID string) 
 	return resp.FriendIDs, nil
 }
 
-func (b *FriendRpcClient) IsBlocked(ctx context.Context, possibleBlackUserID, userID string) (bool, error) {
+func (b *FriendRpcClient) IsBlack(ctx context.Context, possibleBlackUserID, userID string) (bool, error) {
 	r, err := b.Client.IsBlack(ctx, &friend.IsBlackReq{UserID1: possibleBlackUserID, UserID2: userID})
 	if err != nil {
 		return false, err

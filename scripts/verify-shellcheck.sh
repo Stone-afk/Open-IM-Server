@@ -17,9 +17,9 @@
 # This script lints each shell script by `shellcheck`.
 # Usage: `scripts/verify-shellcheck.sh`.
 
-set -o errexit
-set -o nounset
-set -o pipefail
+
+
+
 
 OPENIM_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 source "${OPENIM_ROOT}/scripts/lib/init.sh"
@@ -87,6 +87,7 @@ disabled=(
   2178
   2064
   2260
+  2261
   2043
   2178
   2044

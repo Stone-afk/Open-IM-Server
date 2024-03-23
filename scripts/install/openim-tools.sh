@@ -38,9 +38,6 @@
 #    Example: ./openim-tools.sh openim::tools::install
 #
 
-set -o errexit
-set +o nounset
-set -o pipefail
 
 OPENIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd -P)
 [[ -z ${COMMON_SOURCED} ]] && source "${OPENIM_ROOT}"/scripts/install/common.sh
@@ -61,7 +58,6 @@ openim::tools::pre_start_name() {
   local targets=(
     ncpu
     component
-    up35
   )
   echo "${targets[@]}"
 }
@@ -103,14 +99,29 @@ function openim::tools::start_service() {
     printf "Specifying prometheus port: %s\n" "${prometheus_port}"
     cmd="${cmd} --prometheus_port ${prometheus_port}"
   fi
-  openim::log::status "Starting ${binary_name}..."
-  ${cmd} | tee -a "${LOG_FILE}"
+  openim::log::status "Starting binary ${binary_name}..."
+
+
+
+ ${cmd} 
+
+
+
+ local status=$?
+
+    if [ $status -eq 0 ]; then
+        openim::log::info "Service ${binary_name} started successfully."
+        return 0
+    else
+        openim::log::error "Failed to start service ${binary_name}."
+        return 1
+    fi
 }
 
 function openim::tools::start() {
     openim::log::info "Starting OpenIM Tools..."
     for tool in "${OPENIM_TOOLS_NAME_LISTARIES[@]}"; do
-        openim::log::info "Starting ${tool}..."
+        openim::log::info "Starting tool ${tool}..."
         # openim::tools::start_service ${tool}
         sleep 0.2
     done
@@ -118,20 +129,22 @@ function openim::tools::start() {
 
 
 function openim::tools::pre-start() {
-    openim::log::info "Preparing to start OpenIM Tools..."
-    for tool in "${OPENIM_TOOLS_PRE_START_NAME_LISTARIES[@]}"; do
-        openim::log::info "Starting ${tool}..."
-        openim::tools::start_service ${tool} ${OPNEIM_CONFIG}
-        sleep 0.2
-    done
+   openim::log::info "Preparing to start OpenIM Tools..."
+      for tool in "${OPENIM_TOOLS_PRE_START_NAME_LISTARIES[@]}"; do
+          openim::log::info "Starting tool ${tool}..."
+          if ! openim::tools::start_service ${tool} ${OPNEIM_CONFIG}; then
+              openim::log::error "Failed to start ${tool}, aborting..."
+              return 1
+          fi
+      done
+      openim::log::info "All tools started successfully."
 }
 
 function openim::tools::post-start() {
     openim::log::info "Post-start actions for OpenIM Tools..."
     for tool in "${OPENIM_TOOLS_POST_START_NAME_LISTARIES[@]}"; do
-        openim::log::info "Starting ${tool}..."
+        openim::log::info "Starting tool ${tool}..."
         openim::tools::start_service ${tool}
-        sleep 0.2
     done
 }
 

@@ -18,34 +18,34 @@ import (
 	"context"
 	"fmt"
 
-	"google.golang.org/grpc"
-
 	pbconversation "github.com/OpenIMSDK/protocol/conversation"
 	"github.com/OpenIMSDK/tools/discoveryregistry"
 	"github.com/OpenIMSDK/tools/errs"
-
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
+	util "github.com/openimsdk/open-im-server/v3/pkg/util/genutil"
+	"google.golang.org/grpc"
 )
 
 type Conversation struct {
 	Client pbconversation.ConversationClient
 	conn   grpc.ClientConnInterface
 	discov discoveryregistry.SvcDiscoveryRegistry
+	Config *config.GlobalConfig
 }
 
-func NewConversation(discov discoveryregistry.SvcDiscoveryRegistry) *Conversation {
-	conn, err := discov.GetConn(context.Background(), config.Config.RpcRegisterName.OpenImConversationName)
+func NewConversation(discov discoveryregistry.SvcDiscoveryRegistry, config *config.GlobalConfig) *Conversation {
+	conn, err := discov.GetConn(context.Background(), config.RpcRegisterName.OpenImConversationName)
 	if err != nil {
-		panic(err)
+		util.ExitWithError(err)
 	}
 	client := pbconversation.NewConversationClient(conn)
-	return &Conversation{discov: discov, conn: conn, Client: client}
+	return &Conversation{discov: discov, conn: conn, Client: client, Config: config}
 }
 
 type ConversationRpcClient Conversation
 
-func NewConversationRpcClient(discov discoveryregistry.SvcDiscoveryRegistry) ConversationRpcClient {
-	return ConversationRpcClient(*NewConversation(discov))
+func NewConversationRpcClient(discov discoveryregistry.SvcDiscoveryRegistry, config *config.GlobalConfig) ConversationRpcClient {
+	return ConversationRpcClient(*NewConversation(discov, config))
 }
 
 func (c *ConversationRpcClient) GetSingleConversationRecvMsgOpt(ctx context.Context, userID, conversationID string) (int32, error) {
@@ -114,11 +114,15 @@ func (c *ConversationRpcClient) GetConversationsByConversationID(ctx context.Con
 	return resp.Conversations, nil
 }
 
-func (c *ConversationRpcClient) GetConversations(
-	ctx context.Context,
-	ownerUserID string,
-	conversationIDs []string,
-) ([]*pbconversation.Conversation, error) {
+func (c *ConversationRpcClient) GetConversationOfflinePushUserIDs(ctx context.Context, conversationID string, userIDs []string) ([]string, error) {
+	resp, err := c.Client.GetConversationOfflinePushUserIDs(ctx, &pbconversation.GetConversationOfflinePushUserIDsReq{ConversationID: conversationID, UserIDs: userIDs})
+	if err != nil {
+		return nil, err
+	}
+	return resp.UserIDs, nil
+}
+
+func (c *ConversationRpcClient) GetConversations(ctx context.Context, ownerUserID string, conversationIDs []string) ([]*pbconversation.Conversation, error) {
 	if len(conversationIDs) == 0 {
 		return nil, nil
 	}
@@ -130,4 +134,12 @@ func (c *ConversationRpcClient) GetConversations(
 		return nil, err
 	}
 	return resp.Conversations, nil
+}
+
+func (c *ConversationRpcClient) GetConversationNotReceiveMessageUserIDs(ctx context.Context, conversationID string) ([]string, error) {
+	resp, err := c.Client.GetConversationNotReceiveMessageUserIDs(ctx, &pbconversation.GetConversationNotReceiveMessageUserIDsReq{ConversationID: conversationID})
+	if err != nil {
+		return nil, err
+	}
+	return resp.UserIDs, nil
 }

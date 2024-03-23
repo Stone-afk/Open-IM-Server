@@ -24,9 +24,8 @@ import (
 	"github.com/OpenIMSDK/protocol/msg"
 	"github.com/OpenIMSDK/protocol/sdkws"
 	"github.com/OpenIMSDK/tools/errs"
+	"github.com/OpenIMSDK/tools/log"
 	"github.com/OpenIMSDK/tools/utils"
-
-	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
 )
 
 var ExcludeContentType = []int{constant.HasReadReceipt}
@@ -51,25 +50,25 @@ type MessageRevoked struct {
 func (m *msgServer) messageVerification(ctx context.Context, data *msg.SendMsgReq) error {
 	switch data.MsgData.SessionType {
 	case constant.SingleChatType:
-		if len(config.Config.Manager.UserID) > 0 && utils.IsContain(data.MsgData.SendID, config.Config.Manager.UserID) {
+		if len(m.config.Manager.UserID) > 0 && utils.IsContain(data.MsgData.SendID, m.config.Manager.UserID) {
 			return nil
 		}
-		if utils.IsContain(data.MsgData.SendID, config.Config.IMAdmin.UserID) {
+		if utils.IsContain(data.MsgData.SendID, m.config.IMAdmin.UserID) {
 			return nil
 		}
 		if data.MsgData.ContentType <= constant.NotificationEnd &&
 			data.MsgData.ContentType >= constant.NotificationBegin {
 			return nil
 		}
-		black, err := m.friend.IsBlocked(ctx, data.MsgData.SendID, data.MsgData.RecvID)
+		black, err := m.FriendLocalCache.IsBlack(ctx, data.MsgData.SendID, data.MsgData.RecvID)
 		if err != nil {
 			return err
 		}
 		if black {
 			return errs.ErrBlockedByPeer.Wrap()
 		}
-		if *config.Config.MessageVerify.FriendVerify {
-			friend, err := m.friend.IsFriend(ctx, data.MsgData.SendID, data.MsgData.RecvID)
+		if m.config.MessageVerify.FriendVerify != nil && *m.config.MessageVerify.FriendVerify {
+			friend, err := m.FriendLocalCache.IsFriend(ctx, data.MsgData.SendID, data.MsgData.RecvID)
 			if err != nil {
 				return err
 			}
@@ -80,7 +79,7 @@ func (m *msgServer) messageVerification(ctx context.Context, data *msg.SendMsgRe
 		}
 		return nil
 	case constant.SuperGroupChatType:
-		groupInfo, err := m.Group.GetGroupInfoCache(ctx, data.MsgData.GroupID)
+		groupInfo, err := m.GroupLocalCache.GetGroupInfo(ctx, data.MsgData.GroupID)
 		if err != nil {
 			return err
 		}
@@ -91,27 +90,27 @@ func (m *msgServer) messageVerification(ctx context.Context, data *msg.SendMsgRe
 		if groupInfo.GroupType == constant.SuperGroup {
 			return nil
 		}
-		if len(config.Config.Manager.UserID) > 0 && utils.IsContain(data.MsgData.SendID, config.Config.Manager.UserID) {
+		if len(m.config.Manager.UserID) > 0 && utils.IsContain(data.MsgData.SendID, m.config.Manager.UserID) {
 			return nil
 		}
-		if utils.IsContain(data.MsgData.SendID, config.Config.IMAdmin.UserID) {
+		if utils.IsContain(data.MsgData.SendID, m.config.IMAdmin.UserID) {
 			return nil
 		}
 		if data.MsgData.ContentType <= constant.NotificationEnd &&
 			data.MsgData.ContentType >= constant.NotificationBegin {
 			return nil
 		}
-		// memberIDs, err := m.GroupLocalCache.GetGroupMemberIDs(ctx, data.MsgData.GroupID)
-		// if err != nil {
-		// 	return err
-		// }
-		// if !utils.IsContain(data.MsgData.SendID, memberIDs) {
-		// 	return errs.ErrNotInGroupYet.Wrap()
-		// }
-
-		groupMemberInfo, err := m.Group.GetGroupMemberCache(ctx, data.MsgData.GroupID, data.MsgData.SendID)
+		memberIDs, err := m.GroupLocalCache.GetGroupMemberIDMap(ctx, data.MsgData.GroupID)
 		if err != nil {
-			if err == errs.ErrRecordNotFound {
+			return err
+		}
+		if _, ok := memberIDs[data.MsgData.SendID]; !ok {
+			return errs.ErrNotInGroupYet.Wrap()
+		}
+
+		groupMemberInfo, err := m.GroupLocalCache.GetGroupMember(ctx, data.MsgData.GroupID, data.MsgData.SendID)
+		if err != nil {
+			if errs.ErrRecordNotFound.Is(err) {
 				return errs.ErrNotInGroupYet.Wrap(err.Error())
 			}
 			return err
@@ -159,9 +158,6 @@ func (m *msgServer) encapsulateMsgData(msg *sdkws.MsgData) {
 	case constant.Custom:
 		fallthrough
 	case constant.Quote:
-		utils.SetSwitchFromOptions(msg.Options, constant.IsConversationUpdate, true)
-		utils.SetSwitchFromOptions(msg.Options, constant.IsUnreadCount, true)
-		utils.SetSwitchFromOptions(msg.Options, constant.IsSenderSync, true)
 	case constant.Revoke:
 		utils.SetSwitchFromOptions(msg.Options, constant.IsUnreadCount, false)
 		utils.SetSwitchFromOptions(msg.Options, constant.IsOfflinePush, false)
@@ -192,7 +188,8 @@ func (m *msgServer) modifyMessageByUserMessageReceiveOpt(
 	sessionType int,
 	pb *msg.SendMsgReq,
 ) (bool, error) {
-	opt, err := m.User.GetUserGlobalMsgRecvOpt(ctx, userID)
+	defer log.ZDebug(ctx, "modifyMessageByUserMessageReceiveOpt return")
+	opt, err := m.UserLocalCache.GetUserGlobalMsgRecvOpt(ctx, userID)
 	if err != nil {
 		return false, err
 	}
@@ -208,7 +205,7 @@ func (m *msgServer) modifyMessageByUserMessageReceiveOpt(
 		return true, nil
 	}
 	// conversationID := utils.GetConversationIDBySessionType(conversationID, sessionType)
-	singleOpt, err := m.Conversation.GetSingleConversationRecvMsgOpt(ctx, userID, conversationID)
+	singleOpt, err := m.ConversationLocalCache.GetSingleConversationRecvMsgOpt(ctx, userID, conversationID)
 	if errs.ErrRecordNotFound.Is(err) {
 		return true, nil
 	} else if err != nil {

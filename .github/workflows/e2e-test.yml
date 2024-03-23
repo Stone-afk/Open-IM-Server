@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: OpenIM Linux System E2E Test
+name: OpenIM E2E And API Test
 
 on:
   workflow_dispatch:
@@ -82,7 +82,7 @@ jobs:
         sudo make tidy
         sudo make tools.verify.go-gitlint
 
-    - name: Build, Start
+    - name: Build, Start(make build && make start)
       run: |
         sudo ./scripts/install/install.sh -i
 
@@ -90,7 +90,7 @@ jobs:
       run: |
         sudo ./scripts/install/install.sh -s
 
-    - name: Exec OpenIM API test
+    - name: Exec OpenIM API test (make test-api)
       run: |
         mkdir -p ./tmp
         touch ./tmp/test.md
@@ -102,7 +102,9 @@ jobs:
         echo "</code></pre>" >> ./tmp/test.md
         echo "</details>" >> ./tmp/test.md
 
-    - name: Exec OpenIM E2E Test
+        sudo make test-api
+
+    - name: Exec OpenIM E2E Test (make test-e2e)
       run: |
         echo "" >> ./tmp/test.md
         echo "## OpenIM E2E Test" >> ./tmp/test.md
@@ -111,6 +113,8 @@ jobs:
         sudo make test-e2e | tee -a ./tmp/test.md
         echo "</code></pre>" >> ./tmp/test.md
         echo "</details>" >> ./tmp/test.md
+
+        sudo make test-e2e
 
     - name: Comment PR with file
       uses: thollander/actions-comment-pull-request@v2

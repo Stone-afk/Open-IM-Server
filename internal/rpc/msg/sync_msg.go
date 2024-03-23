@@ -17,15 +17,13 @@ package msg
 import (
 	"context"
 
-	"github.com/openimsdk/open-im-server/v3/pkg/authverify"
-	"github.com/openimsdk/open-im-server/v3/pkg/msgprocessor"
-
 	"github.com/OpenIMSDK/protocol/constant"
 	"github.com/OpenIMSDK/protocol/msg"
-
 	"github.com/OpenIMSDK/protocol/sdkws"
 	"github.com/OpenIMSDK/tools/log"
 	"github.com/OpenIMSDK/tools/utils"
+	"github.com/openimsdk/open-im-server/v3/pkg/authverify"
+	"github.com/openimsdk/open-im-server/v3/pkg/msgprocessor"
 )
 
 func (m *msgServer) PullMessageBySeqs(
@@ -37,7 +35,7 @@ func (m *msgServer) PullMessageBySeqs(
 	resp.NotificationMsgs = make(map[string]*sdkws.PullMsgs)
 	for _, seq := range req.SeqRanges {
 		if !msgprocessor.IsNotification(seq.ConversationID) {
-			conversation, err := m.Conversation.GetConversation(ctx, req.UserID, seq.ConversationID)
+			conversation, err := m.ConversationLocalCache.GetConversation(ctx, req.UserID, seq.ConversationID)
 			if err != nil {
 				log.ZError(ctx, "GetConversation error", err, "conversationID", seq.ConversationID)
 				continue
@@ -90,7 +88,7 @@ func (m *msgServer) PullMessageBySeqs(
 }
 
 func (m *msgServer) GetMaxSeq(ctx context.Context, req *sdkws.GetMaxSeqReq) (*sdkws.GetMaxSeqResp, error) {
-	if err := authverify.CheckAccessV3(ctx, req.UserID); err != nil {
+	if err := authverify.CheckAccessV3(ctx, req.UserID, m.config); err != nil {
 		return nil, err
 	}
 	conversationIDs, err := m.ConversationLocalCache.GetConversationIDs(ctx, req.UserID)
@@ -133,14 +131,15 @@ func (m *msgServer) SearchMessage(ctx context.Context, req *msg.SearchMessageReq
 			sendIDs = append(sendIDs, chatLog.SendID)
 		}
 		switch chatLog.SessionType {
-		case constant.SingleChatType:
+		case constant.SingleChatType, constant.NotificationChatType:
 			recvIDs = append(recvIDs, chatLog.RecvID)
 		case constant.GroupChatType, constant.SuperGroupChatType:
 			groupIDs = append(groupIDs, chatLog.GroupID)
 		}
 	}
+	// Retrieve sender and receiver information
 	if len(sendIDs) != 0 {
-		sendInfos, err := m.User.GetUsersInfo(ctx, sendIDs)
+		sendInfos, err := m.UserLocalCache.GetUsersInfo(ctx, sendIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +148,7 @@ func (m *msgServer) SearchMessage(ctx context.Context, req *msg.SearchMessageReq
 		}
 	}
 	if len(recvIDs) != 0 {
-		recvInfos, err := m.User.GetUsersInfo(ctx, recvIDs)
+		recvInfos, err := m.UserLocalCache.GetUsersInfo(ctx, recvIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -157,15 +156,23 @@ func (m *msgServer) SearchMessage(ctx context.Context, req *msg.SearchMessageReq
 			recvMap[recvInfo.UserID] = recvInfo.Nickname
 		}
 	}
+
+	// Retrieve group information including member counts
 	if len(groupIDs) != 0 {
-		groupInfos, err := m.Group.GetGroupInfos(ctx, groupIDs, true)
+		groupInfos, err := m.GroupLocalCache.GetGroupInfos(ctx, groupIDs)
 		if err != nil {
 			return nil, err
 		}
 		for _, groupInfo := range groupInfos {
 			groupMap[groupInfo.GroupID] = groupInfo
+			// Get actual member count
+			memberIDs, err := m.GroupLocalCache.GetGroupMemberIDs(ctx, groupInfo.GroupID)
+			if err == nil {
+				groupInfo.MemberCount = uint32(len(memberIDs)) // Update the member count with actual number
+			}
 		}
 	}
+	// Construct response with updated information
 	for _, chatLog := range chatLogs {
 		pbchatLog := &msg.ChatLog{}
 		utils.CopyStructFields(pbchatLog, chatLog)
@@ -175,16 +182,16 @@ func (m *msgServer) SearchMessage(ctx context.Context, req *msg.SearchMessageReq
 			pbchatLog.SenderNickname = sendMap[chatLog.SendID]
 		}
 		switch chatLog.SessionType {
-		case constant.SingleChatType:
+		case constant.SingleChatType, constant.NotificationChatType:
 			pbchatLog.RecvNickname = recvMap[chatLog.RecvID]
-
 		case constant.GroupChatType, constant.SuperGroupChatType:
-			pbchatLog.SenderFaceURL = groupMap[chatLog.GroupID].FaceURL
-			pbchatLog.GroupMemberCount = groupMap[chatLog.GroupID].MemberCount
-			pbchatLog.RecvID = groupMap[chatLog.GroupID].GroupID
-			pbchatLog.GroupName = groupMap[chatLog.GroupID].GroupName
-			pbchatLog.GroupOwner = groupMap[chatLog.GroupID].OwnerUserID
-			pbchatLog.GroupType = groupMap[chatLog.GroupID].GroupType
+			groupInfo := groupMap[chatLog.GroupID]
+			pbchatLog.SenderFaceURL = groupInfo.FaceURL
+			pbchatLog.GroupMemberCount = groupInfo.MemberCount // Reflects actual member count
+			pbchatLog.RecvID = groupInfo.GroupID
+			pbchatLog.GroupName = groupInfo.GroupName
+			pbchatLog.GroupOwner = groupInfo.OwnerUserID
+			pbchatLog.GroupType = groupInfo.GroupType
 		}
 		resp.ChatLogs = append(resp.ChatLogs, pbchatLog)
 	}

@@ -17,40 +17,38 @@ package msggateway
 import (
 	"context"
 
-	"google.golang.org/grpc"
-
 	"github.com/OpenIMSDK/protocol/constant"
 	"github.com/OpenIMSDK/protocol/msggateway"
 	"github.com/OpenIMSDK/tools/discoveryregistry"
 	"github.com/OpenIMSDK/tools/errs"
 	"github.com/OpenIMSDK/tools/log"
 	"github.com/OpenIMSDK/tools/mcontext"
-	"github.com/OpenIMSDK/tools/utils"
-
 	"github.com/openimsdk/open-im-server/v3/pkg/authverify"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/db/cache"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/startrpc"
+	"google.golang.org/grpc"
 )
 
-func (s *Server) InitServer(disCov discoveryregistry.SvcDiscoveryRegistry, server *grpc.Server) error {
-	rdb, err := cache.NewRedis()
+func (s *Server) InitServer(config *config.GlobalConfig, disCov discoveryregistry.SvcDiscoveryRegistry, server *grpc.Server) error {
+	rdb, err := cache.NewRedis(config)
 	if err != nil {
 		return err
 	}
 
-	msgModel := cache.NewMsgCacheModel(rdb)
-	s.LongConnServer.SetDiscoveryRegistry(disCov)
+	msgModel := cache.NewMsgCacheModel(rdb, config)
+	s.LongConnServer.SetDiscoveryRegistry(disCov, config)
 	s.LongConnServer.SetCacheHandler(msgModel)
 	msggateway.RegisterMsgGatewayServer(server, s)
 	return nil
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(conf *config.GlobalConfig) error {
 	return startrpc.Start(
 		s.rpcPort,
-		config.Config.RpcRegisterName.OpenImMessageGatewayName,
+		conf.RpcRegisterName.OpenImMessageGatewayName,
 		s.prometheusPort,
+		conf,
 		s.InitServer,
 	)
 }
@@ -59,20 +57,25 @@ type Server struct {
 	rpcPort        int
 	prometheusPort int
 	LongConnServer LongConnServer
-	pushTerminal   []int
+	config         *config.GlobalConfig
+	pushTerminal   map[int]struct{}
 }
 
 func (s *Server) SetLongConnServer(LongConnServer LongConnServer) {
 	s.LongConnServer = LongConnServer
 }
 
-func NewServer(rpcPort int, proPort int, longConnServer LongConnServer) *Server {
-	return &Server{
+func NewServer(rpcPort int, proPort int, longConnServer LongConnServer, conf *config.GlobalConfig) *Server {
+	s := &Server{
 		rpcPort:        rpcPort,
 		prometheusPort: proPort,
 		LongConnServer: longConnServer,
-		pushTerminal:   []int{constant.IOSPlatformID, constant.AndroidPlatformID},
+		pushTerminal:   make(map[int]struct{}),
+		config:         conf,
 	}
+	s.pushTerminal[constant.IOSPlatformID] = struct{}{}
+	s.pushTerminal[constant.AndroidPlatformID] = struct{}{}
+	return s
 }
 
 func (s *Server) OnlinePushMsg(
@@ -86,7 +89,7 @@ func (s *Server) GetUsersOnlineStatus(
 	ctx context.Context,
 	req *msggateway.GetUsersOnlineStatusReq,
 ) (*msggateway.GetUsersOnlineStatusResp, error) {
-	if !authverify.IsAppManagerUid(ctx) {
+	if !authverify.IsAppManagerUid(ctx, s.config) {
 		return nil, errs.ErrNoPermission.Wrap("only app manager")
 	}
 	var resp msggateway.GetUsersOnlineStatusResp
@@ -126,13 +129,9 @@ func (s *Server) OnlineBatchPushOneMsg(
 	panic("implement me")
 }
 
-func (s *Server) SuperGroupOnlineBatchPushOneMsg(
-	ctx context.Context,
-	req *msggateway.OnlineBatchPushOneMsgReq,
+func (s *Server) SuperGroupOnlineBatchPushOneMsg(ctx context.Context, req *msggateway.OnlineBatchPushOneMsgReq,
 ) (*msggateway.OnlineBatchPushOneMsgResp, error) {
-
 	var singleUserResults []*msggateway.SingleMsgToUserResults
-
 	for _, v := range req.PushToUserIDs {
 		var resp []*msggateway.SingleMsgToUserPlatform
 		results := &msggateway.SingleMsgToUserResults{
@@ -153,23 +152,22 @@ func (s *Server) SuperGroupOnlineBatchPushOneMsg(
 			}
 
 			userPlatform := &msggateway.SingleMsgToUserPlatform{
-				RecvID:         v,
 				RecvPlatFormID: int32(client.PlatformID),
 			}
 			if !client.IsBackground ||
 				(client.IsBackground && client.PlatformID != constant.IOSPlatformID) {
 				err := client.PushMessage(ctx, req.MsgData)
 				if err != nil {
-					userPlatform.ResultCode = -2
+					userPlatform.ResultCode = int64(errs.ErrPushMsgErr.Code())
 					resp = append(resp, userPlatform)
 				} else {
-					if utils.IsContainInt(client.PlatformID, s.pushTerminal) {
+					if _, ok := s.pushTerminal[client.PlatformID]; ok {
 						results.OnlinePush = true
 						resp = append(resp, userPlatform)
 					}
 				}
 			} else {
-				userPlatform.ResultCode = -3
+				userPlatform.ResultCode = int64(errs.ErrIOSBackgroundPushErr.Code())
 				resp = append(resp, userPlatform)
 			}
 		}

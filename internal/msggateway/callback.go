@@ -20,18 +20,13 @@ import (
 
 	"github.com/OpenIMSDK/protocol/constant"
 	"github.com/OpenIMSDK/tools/mcontext"
-
 	cbapi "github.com/openimsdk/open-im-server/v3/pkg/callbackstruct"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/config"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/http"
 )
 
-func callBackURL() string {
-	return config.Config.Callback.CallbackUrl
-}
-
-func CallbackUserOnline(ctx context.Context, userID string, platformID int, isAppBackground bool, connID string) error {
-	if !config.Config.Callback.CallbackUserOnline.Enable {
+func CallbackUserOnline(ctx context.Context, globalConfig *config.GlobalConfig, userID string, platformID int, isAppBackground bool, connID string) error {
+	if !globalConfig.Callback.CallbackUserOnline.Enable {
 		return nil
 	}
 	req := cbapi.CallbackUserOnlineReq{
@@ -49,14 +44,14 @@ func CallbackUserOnline(ctx context.Context, userID string, platformID int, isAp
 		ConnID:          connID,
 	}
 	resp := cbapi.CommonCallbackResp{}
-	if err := http.CallBackPostReturn(ctx, callBackURL(), &req, &resp, config.Config.Callback.CallbackUserOnline); err != nil {
+	if err := http.CallBackPostReturn(ctx, globalConfig.Callback.CallbackUrl, &req, &resp, globalConfig.Callback.CallbackUserOnline); err != nil {
 		return err
 	}
 	return nil
 }
 
-func CallbackUserOffline(ctx context.Context, userID string, platformID int, connID string) error {
-	if !config.Config.Callback.CallbackUserOffline.Enable {
+func CallbackUserOffline(ctx context.Context, globalConfig *config.GlobalConfig, userID string, platformID int, connID string) error {
+	if !globalConfig.Callback.CallbackUserOffline.Enable {
 		return nil
 	}
 	req := &cbapi.CallbackUserOfflineReq{
@@ -73,14 +68,14 @@ func CallbackUserOffline(ctx context.Context, userID string, platformID int, con
 		ConnID: connID,
 	}
 	resp := &cbapi.CallbackUserOfflineResp{}
-	if err := http.CallBackPostReturn(ctx, callBackURL(), req, resp, config.Config.Callback.CallbackUserOffline); err != nil {
+	if err := http.CallBackPostReturn(ctx, globalConfig.Callback.CallbackUrl, req, resp, globalConfig.Callback.CallbackUserOffline); err != nil {
 		return err
 	}
 	return nil
 }
 
-func CallbackUserKickOff(ctx context.Context, userID string, platformID int) error {
-	if !config.Config.Callback.CallbackUserKickOff.Enable {
+func CallbackUserKickOff(ctx context.Context, globalConfig *config.GlobalConfig, userID string, platformID int) error {
+	if !globalConfig.Callback.CallbackUserKickOff.Enable {
 		return nil
 	}
 	req := &cbapi.CallbackUserKickOffReq{
@@ -96,7 +91,7 @@ func CallbackUserKickOff(ctx context.Context, userID string, platformID int) err
 		Seq: time.Now().UnixMilli(),
 	}
 	resp := &cbapi.CommonCallbackResp{}
-	if err := http.CallBackPostReturn(ctx, callBackURL(), req, resp, config.Config.Callback.CallbackUserOffline); err != nil {
+	if err := http.CallBackPostReturn(ctx, globalConfig.Callback.CallbackUrl, req, resp, globalConfig.Callback.CallbackUserOffline); err != nil {
 		return err
 	}
 	return nil
@@ -105,7 +100,7 @@ func CallbackUserKickOff(ctx context.Context, userID string, platformID int) err
 // func callbackUserOnline(operationID, userID string, platformID int, token string, isAppBackground bool, connID
 // string) cbApi.CommonCallbackResp {
 //	callbackResp := cbApi.CommonCallbackResp{OperationID: operationID}
-//	if !config.Config.Callback.CallbackUserOnline.Enable {
+//	if !config.Config.Callback.CallbackUserOnline.WithEnable {
 //		return callbackResp
 //	}
 //	callbackUserOnlineReq := cbApi.CallbackUserOnlineReq{
@@ -134,7 +129,7 @@ func CallbackUserKickOff(ctx context.Context, userID string, platformID int) err
 //}
 //func callbackUserOffline(operationID, userID string, platformID int, connID string) cbApi.CommonCallbackResp {
 //	callbackResp := cbApi.CommonCallbackResp{OperationID: operationID}
-//	if !config.Config.Callback.CallbackUserOffline.Enable {
+//	if !config.Config.Callback.CallbackUserOffline.WithEnable {
 //		return callbackResp
 //	}
 //	callbackOfflineReq := cbApi.CallbackUserOfflineReq{
@@ -161,7 +156,7 @@ func CallbackUserKickOff(ctx context.Context, userID string, platformID int) err
 //}
 //func callbackUserKickOff(operationID string, userID string, platformID int) cbApi.CommonCallbackResp {
 //	callbackResp := cbApi.CommonCallbackResp{OperationID: operationID}
-//	if !config.Config.Callback.CallbackUserKickOff.Enable {
+//	if !config.Config.Callback.CallbackUserKickOff.WithEnable {
 //		return callbackResp
 //	}
 //	callbackUserKickOffReq := cbApi.CallbackUserKickOffReq{

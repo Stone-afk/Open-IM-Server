@@ -17,17 +17,14 @@ package msg
 import (
 	"context"
 
-	utils2 "github.com/OpenIMSDK/tools/utils"
-
-	cbapi "github.com/openimsdk/open-im-server/v3/pkg/callbackstruct"
-
-	"github.com/redis/go-redis/v9"
-
 	"github.com/OpenIMSDK/protocol/constant"
 	"github.com/OpenIMSDK/protocol/msg"
 	"github.com/OpenIMSDK/protocol/sdkws"
 	"github.com/OpenIMSDK/tools/errs"
 	"github.com/OpenIMSDK/tools/log"
+	utils2 "github.com/OpenIMSDK/tools/utils"
+	cbapi "github.com/openimsdk/open-im-server/v3/pkg/callbackstruct"
+	"github.com/redis/go-redis/v9"
 )
 
 func (m *msgServer) GetConversationsHasReadAndMaxSeq(ctx context.Context, req *msg.GetConversationsHasReadAndMaxSeqReq) (resp *msg.GetConversationsHasReadAndMaxSeqResp, err error) {
@@ -44,7 +41,7 @@ func (m *msgServer) GetConversationsHasReadAndMaxSeq(ctx context.Context, req *m
 	if err != nil {
 		return nil, err
 	}
-	conversations, err := m.Conversation.GetConversations(ctx, req.UserID, conversationIDs)
+	conversations, err := m.ConversationLocalCache.GetConversations(ctx, req.UserID, conversationIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +104,7 @@ func (m *msgServer) MarkMsgsAsRead(
 	if hasReadSeq > maxSeq {
 		return nil, errs.ErrArgs.Wrap("hasReadSeq must not be bigger than maxSeq")
 	}
-	conversation, err := m.Conversation.GetConversation(ctx, req.UserID, req.ConversationID)
+	conversation, err := m.ConversationLocalCache.GetConversation(ctx, req.UserID, req.ConversationID)
 	if err != nil {
 		return
 	}
@@ -132,7 +129,7 @@ func (m *msgServer) MarkMsgsAsRead(
 		Seqs:           req.Seqs,
 		ContentType:    conversation.ConversationType,
 	}
-	if err = CallbackSingleMsgRead(ctx, req_callback); err != nil {
+	if err = CallbackSingleMsgRead(ctx, m.config, req_callback); err != nil {
 		return nil, err
 	}
 
@@ -147,7 +144,7 @@ func (m *msgServer) MarkConversationAsRead(
 	ctx context.Context,
 	req *msg.MarkConversationAsReadReq,
 ) (resp *msg.MarkConversationAsReadResp, err error) {
-	conversation, err := m.Conversation.GetConversation(ctx, req.UserID, req.ConversationID)
+	conversation, err := m.ConversationLocalCache.GetConversation(ctx, req.UserID, req.ConversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +206,7 @@ func (m *msgServer) MarkConversationAsRead(
 		UnreadMsgNum: req.HasReadSeq,
 		ContentType:  int64(conversation.ConversationType),
 	}
-	if err := CallbackGroupMsgRead(ctx, reqCall); err != nil {
+	if err := CallbackGroupMsgRead(ctx, m.config, reqCall); err != nil {
 		return nil, err
 	}
 
